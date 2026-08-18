@@ -466,16 +466,21 @@
   async function extractAudioFromVideo(file) {
     const arrBuf = await file.arrayBuffer();
     const ctx = getAudioContext();
-    if (ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch (e) {}
-    }
+    // Note: decodeAudioData works regardless of context run-state, so we
+    // deliberately don't touch ctx.resume() here — on iOS that promise can
+    // hang indefinitely when the context wasn't created inside a direct
+    // tap/click, which stalls the whole import forever.
+    const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Decoding timed out.')), ms));
     try {
-      const decoded = await ctx.decodeAudioData(arrBuf.slice(0));
+      const decoded = await Promise.race([
+        ctx.decodeAudioData(arrBuf.slice(0)),
+        timeout(20000),
+      ]);
       const blob = audioBufferToWavBlob(decoded);
       const duration = decoded.duration;
       return { blob, duration, mime: 'audio/wav' };
     } catch (e) {
-      throw new Error('Could not decode an audio track from this file (unsupported codec in this browser).');
+      throw new Error('Could not decode an audio track from this file (unsupported codec, or decoding timed out).');
     }
   }
 
@@ -484,8 +489,10 @@
       const url = URL.createObjectURL(blob);
       const a = new Audio();
       a.preload = 'metadata';
-      a.onloadedmetadata = () => { resolve(a.duration); URL.revokeObjectURL(url); };
-      a.onerror = () => { resolve(0); URL.revokeObjectURL(url); };
+      const done = (val) => { resolve(val); URL.revokeObjectURL(url); clearTimeout(timer); };
+      const timer = setTimeout(() => done(0), 15000);
+      a.onloadedmetadata = () => done(a.duration);
+      a.onerror = () => done(0);
       a.src = url;
     });
   }
