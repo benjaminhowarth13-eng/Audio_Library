@@ -450,18 +450,31 @@
     return new Blob([bufferArr], { type: 'audio/wav' });
   }
 
+  // iOS Safari (and Chrome-on-iOS, which uses the same engine) caps how many
+  // AudioContexts can exist in a session. Creating and closing one per file
+  // hits that ceiling after a handful of files, so we reuse a single shared
+  // context across the whole batch instead.
+  let sharedAudioCtx = null;
+  function getAudioContext() {
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      sharedAudioCtx = new AC();
+    }
+    return sharedAudioCtx;
+  }
+
   async function extractAudioFromVideo(file) {
     const arrBuf = await file.arrayBuffer();
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC();
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch (e) {}
+    }
     try {
       const decoded = await ctx.decodeAudioData(arrBuf.slice(0));
       const blob = audioBufferToWavBlob(decoded);
       const duration = decoded.duration;
-      ctx.close();
       return { blob, duration, mime: 'audio/wav' };
     } catch (e) {
-      ctx.close();
       throw new Error('Could not decode an audio track from this file (unsupported codec in this browser).');
     }
   }
