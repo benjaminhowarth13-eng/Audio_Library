@@ -350,8 +350,21 @@
       tx.onerror = () => reject(tx.error);
     });
   }
+  function withTimeout(promise, ms, message) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+    ]);
+  }
+  // Only the fields below are ever written to IndexedDB. Deliberately storing
+  // a plain ArrayBuffer (`data`) rather than a Blob — WebKit/iOS has a
+  // long-standing bug where put()'ing a Blob into IndexedDB can hang forever
+  // with no success or error event. ArrayBuffers don't hit that bug.
+  function toDbRecord(t) {
+    return { id: t.id, title: t.title, artist: t.artist, duration: t.duration, addedAt: t.addedAt, data: t.data, mime: t.mime };
+  }
 
-  let tracks = []; // {id, title, artist, duration, addedAt, blob, mime, hue}
+  let tracks = []; // {id, title, artist, duration, addedAt, data (ArrayBuffer), mime, blob (derived, not persisted)}
   let filtered = [];
   let currentIndex = -1;
   let currentUrl = null;
@@ -533,16 +546,20 @@
           duration = result.duration;
         }
         const title = file.name.replace(/\.[^/.]+$/, '');
+        // Store the raw bytes (ArrayBuffer), not the Blob itself — see the
+        // note on toDbRecord() above for why.
+        const data = await blob.arrayBuffer();
         const track = {
           id: crypto.randomUUID(),
           title,
           artist: isVideo ? 'Extracted from video' : 'Unknown artist',
           duration: duration || 0,
           addedAt: Date.now(),
-          blob,
+          data,
           mime,
+          blob: new Blob([data], { type: mime }), // derived, in-memory only
         };
-        await dbPut(track);
+        await withTimeout(dbPut(toDbRecord(track)), 20000, 'Saving to your library timed out.');
         tracks.unshift(track);
         pendingRow.remove();
         render();
@@ -642,7 +659,7 @@
       const t = tracks.find(tt => tt.id === id);
       if (t && newTitle !== t.title) {
         t.title = newTitle;
-        await dbPut(t);
+        await dbPut(toDbRecord(t));
         if (tracks[currentIndex] && tracks[currentIndex].id === id) updateNowPlayingUI();
       }
       el.removeEventListener('blur', finish);
@@ -790,10 +807,11 @@
   async function init() {
     try {
       db = await openDB();
-      tracks = await dbAll();
+      const raw = await withTimeout(dbAll(), 15000, 'Loading your library timed out.');
+      tracks = raw.map((r) => ({ ...r, blob: new Blob([r.data], { type: r.mime }) }));
       tracks.sort((a, b) => b.addedAt - a.addedAt);
     } catch (e) {
-      toast('This browser blocked local storage (IndexedDB), so your library will only last for this session.', true);
+      toast('Local storage on this device had a problem loading your library: ' + e.message, true);
     }
     render();
   }
