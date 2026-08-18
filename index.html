@@ -2,12 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Offline Audio Library</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Audio Library">
 <style>
   :root {
     --bg: #0a0a0a;
@@ -334,10 +337,40 @@
       req.onerror = () => reject(req.error);
     });
   }
-  function dbPut(track) {
+  function dbGet(id) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).get(id);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function dbPut(record) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(track);
+      tx.objectStore(STORE).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  // Updates only the given fields on a stored record, leaving everything
+  // else (crucially the audio `data`) untouched. Renaming a track used to
+  // call dbPut() with the in-memory track object, but that object no longer
+  // carries the audio bytes (see the note by the `tracks` array below) —
+  // put()'ing it verbatim would have overwritten `data` with undefined and
+  // silently destroyed the stored audio. Read-modify-write avoids that.
+  function dbUpdateFields(id, fields) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      const store = tx.objectStore(STORE);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const record = getReq.result;
+        if (!record) { reject(new Error('Track not found in storage.')); return; }
+        Object.assign(record, fields);
+        store.put(record);
+      };
+      getReq.onerror = () => reject(getReq.error);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -356,18 +389,17 @@
       new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
     ]);
   }
-  // Only the fields below are ever written to IndexedDB. Deliberately storing
-  // a plain ArrayBuffer (`data`) rather than a Blob — WebKit/iOS has a
-  // long-standing bug where put()'ing a Blob into IndexedDB can hang forever
-  // with no success or error event. ArrayBuffers don't hit that bug.
-  function toDbRecord(t) {
-    return { id: t.id, title: t.title, artist: t.artist, duration: t.duration, addedAt: t.addedAt, data: t.data, mime: t.mime };
-  }
 
-  let tracks = []; // {id, title, artist, duration, addedAt, data (ArrayBuffer), mime, blob (derived, not persisted)}
+  let tracks = []; // metadata only — {id, title, artist, duration, addedAt, mime}.
+  // Deliberately does NOT hold the audio bytes: on iOS Safari especially, a
+  // library of any real size would otherwise mean every song's decoded audio
+  // sitting in memory simultaneously, which is a realistic way to get the
+  // tab/PWA killed. Audio bytes live only in IndexedDB and get fetched via
+  // dbGet() right before a track plays (see loadAndPlay).
   let filtered = [];
   let currentIndex = -1;
   let currentUrl = null;
+  let loadToken = 0; // guards against a slower, superseded dbGet() resolving after a newer one (rapid next/prev taps)
   const audio = new Audio();
 
   const els = {
@@ -524,20 +556,47 @@
     return d.innerHTML;
   }
 
+  // iOS/Safari's file picker reports a reliable video/* MIME type, but for
+  // many audio formats (.m4a, .caf, etc., especially from Music or Voice
+  // Memos exports) it reports an empty string. Fall back to the file
+  // extension in that case instead of rejecting the file outright.
+  const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'aac', 'wav', 'wave', 'flac', 'ogg', 'oga', 'opus', 'caf', 'aiff', 'aif', 'wma'];
+  const VIDEO_EXTENSIONS = ['mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', '3gp', '3gpp'];
+  function classifyFile(file) {
+    const type = file.type || '';
+    if (type.startsWith('audio/')) return 'audio';
+    if (type.startsWith('video/')) return 'video';
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (AUDIO_EXTENSIONS.includes(ext)) return 'audio';
+    if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+    return null;
+  }
+  function guessMimeFromExt(filename) {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    const map = {
+      mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav',
+      wave: 'audio/wav', flac: 'audio/flac', ogg: 'audio/ogg', oga: 'audio/ogg',
+      opus: 'audio/opus', caf: 'audio/x-caf', aiff: 'audio/aiff', aif: 'audio/aiff',
+      wma: 'audio/x-ms-wma',
+    };
+    return map[ext] || 'audio/mpeg';
+  }
+
   async function handleFiles(fileList) {
     const files = Array.from(fileList);
     for (const file of files) {
       const pendingRow = addPendingRow(file.name);
       try {
-        const isVideo = file.type.startsWith('video/');
-        const isAudio = file.type.startsWith('audio/');
-        if (!isVideo && !isAudio) {
+        const kind = classifyFile(file);
+        if (!kind) {
           throw new Error('Not a recognized audio or video file.');
         }
+        const isVideo = kind === 'video';
+        const isAudio = kind === 'audio';
         let blob, duration, mime;
         if (isAudio) {
           blob = file;
-          mime = file.type;
+          mime = file.type || guessMimeFromExt(file.name);
           duration = await getAudioDuration(blob);
         } else {
           const result = await extractAudioFromVideo(file);
@@ -546,32 +605,31 @@
           duration = result.duration;
         }
         const title = file.name.replace(/\.[^/.]+$/, '');
-        // Store the raw bytes (ArrayBuffer), not the Blob itself — see the
-        // note on toDbRecord() above for why.
+        // Store the raw bytes (ArrayBuffer), not the Blob itself — WebKit/iOS
+        // has a long-standing bug where put()'ing a Blob into IndexedDB can
+        // hang forever with no success or error event. ArrayBuffers don't
+        // hit that bug.
         const data = await blob.arrayBuffer();
-        const track = {
+        const meta = {
           id: crypto.randomUUID(),
           title,
           artist: isVideo ? 'Extracted from video' : 'Unknown artist',
           duration: duration || 0,
           addedAt: Date.now(),
-          data,
           mime,
-          blob: new Blob([data], { type: mime }), // derived, in-memory only
         };
-        await withTimeout(dbPut(toDbRecord(track)), 20000, 'Saving to your library timed out.');
-        tracks.unshift(track);
+        await withTimeout(dbPut({ ...meta, data }), 20000, 'Saving to your library timed out.');
+        tracks.unshift(meta); // metadata only, audio bytes stay in IndexedDB
         pendingRow.remove();
         render();
       } catch (err) {
         pendingRow.remove();
-        toast(`"${file.name}": ${err.message}`, true);
+        const msg = (err && err.name === 'QuotaExceededError')
+          ? 'Ran out of storage space on this device.'
+          : err.message;
+        toast(`"${file.name}": ${msg}`, true);
       }
     }
-  }
-
-  function currentList() {
-    return filtered.length || els.searchInput.value ? filtered : tracks;
   }
 
   function applySearch() {
@@ -608,10 +666,10 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">${isPlaying ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>' : '<path d="M8 5v14l11-7z"/>'}</svg>
           </span>
         </td>
-        <td>
+        <td class="col-track">
           <div class="track-cell">
             <div class="cover" style="${coverStyle(t.title)}"></div>
-            <div>
+            <div class="track-text">
               <div class="track-title" data-rename="${t.id}">${escapeHtml(t.title)}</div>
               <div class="track-sub">${escapeHtml(t.artist || '')}</div>
             </div>
@@ -619,12 +677,12 @@
         </td>
         <td class="col-added">${new Date(t.addedAt).toLocaleDateString()}</td>
         <td class="col-dur">${fmtTime(t.duration)}</td>
-        <td>
+        <td class="col-actions">
           <div class="row-actions">
-            <button class="icon-btn" data-rename-btn="${t.id}" title="Rename">
+            <button class="icon-btn" data-rename-btn="${t.id}" title="Rename" aria-label="Rename">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>
             </button>
-            <button class="icon-btn danger" data-delete="${t.id}" title="Delete">
+            <button class="icon-btn danger" data-delete="${t.id}" title="Delete" aria-label="Delete">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
             </button>
           </div>
@@ -640,8 +698,13 @@
 
     els.listWrap.querySelectorAll('tr[data-id]').forEach(row => {
       const id = row.dataset.id;
-      row.querySelector('.col-idx').addEventListener('click', () => playById(id));
-      row.querySelector('.track-cell').addEventListener('dblclick', () => playById(id));
+      // Whole row is tappable to play — hover-to-reveal and double-click
+      // don't work on touch, so a single tap anywhere on the row is the one
+      // interaction guaranteed to work on both mouse and touch.
+      row.addEventListener('click', () => playById(id));
+      // ...except the title itself: while renaming, taps there are for
+      // placing the text cursor and shouldn't also trigger playback.
+      row.querySelector('.track-title').addEventListener('click', (e) => e.stopPropagation());
       row.querySelector('[data-delete]').addEventListener('click', (e) => { e.stopPropagation(); deleteTrack(id); });
       row.querySelector('[data-rename-btn]').addEventListener('click', (e) => { e.stopPropagation(); startRename(id); });
     });
@@ -652,14 +715,27 @@
     if (!el) return;
     el.contentEditable = 'true';
     el.focus();
-    document.execCommand('selectAll', false, null);
+    // Select all existing text so typing replaces it outright. Using
+    // Selection/Range directly rather than the deprecated execCommand,
+    // which is also the more reliable option in mobile Safari.
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
     const finish = async () => {
       el.contentEditable = 'false';
       const newTitle = el.textContent.trim() || 'Untitled';
       const t = tracks.find(tt => tt.id === id);
       if (t && newTitle !== t.title) {
-        t.title = newTitle;
-        await dbPut(toDbRecord(t));
+        const prevTitle = t.title;
+        t.title = newTitle; // reflect immediately in the UI
+        try {
+          await withTimeout(dbUpdateFields(id, { title: newTitle }), 15000, 'Saving the rename timed out.');
+        } catch (e) {
+          t.title = prevTitle; // roll back — the save didn't actually happen
+          toast(`Couldn't rename: ${e.message}`, true);
+        }
         if (tracks[currentIndex] && tracks[currentIndex].id === id) updateNowPlayingUI();
       }
       el.removeEventListener('blur', finish);
@@ -696,17 +772,36 @@
     loadAndPlay(globalIdx);
   }
 
-  function loadAndPlay(index) {
+  async function loadAndPlay(index) {
     if (index < 0 || index >= tracks.length) return;
     currentIndex = index;
-    const t = tracks[index];
-    if (currentUrl) URL.revokeObjectURL(currentUrl);
-    currentUrl = URL.createObjectURL(t.blob);
-    audio.src = currentUrl;
-    audio.play().catch(() => {});
+    const meta = tracks[index];
+    // Update title/cover immediately for instant feedback, before the
+    // (usually sub-50ms, but not guaranteed) IndexedDB read below finishes.
     updateNowPlayingUI();
     renderList();
+    // Audio bytes aren't kept in memory for the whole library (see the note
+    // on the `tracks` array) — fetch this one track's bytes now.
+    const loadToken = ++loadAndPlay.token;
+    let record;
+    try {
+      record = await withTimeout(dbGet(meta.id), 15000, 'Loading this track timed out.');
+    } catch (e) {
+      toast(`Couldn't load "${meta.title}": ${e.message}`, true);
+      return;
+    }
+    if (loadToken !== loadAndPlay.token) return; // superseded by a newer tap
+    if (!record) {
+      toast(`Couldn't find "${meta.title}" in storage — it may need to be re-added.`, true);
+      return;
+    }
+    const blob = new Blob([record.data], { type: record.mime });
+    if (currentUrl) URL.revokeObjectURL(currentUrl);
+    currentUrl = URL.createObjectURL(blob);
+    audio.src = currentUrl;
+    audio.play().catch(() => {});
   }
+  loadAndPlay.token = 0;
 
   function updateNowPlayingUI() {
     const t = tracks[currentIndex];
