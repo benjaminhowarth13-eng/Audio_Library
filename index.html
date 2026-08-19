@@ -23,7 +23,7 @@
     --text-dim: #a7a7a7;
     --border: rgba(255,255,255,0.08);
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; height: 100%;
     background: var(--bg);
@@ -31,22 +31,26 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
+    overscroll-behavior: none;
   }
   .app {
     display: grid;
     grid-template-columns: 220px 1fr;
     grid-template-rows: 1fr auto;
     height: 100vh;
+    height: 100dvh; /* iOS/Android toolbars resize the viewport; dvh tracks the real visible height */
   }
   /* Sidebar */
   .sidebar {
     grid-row: 1 / 2;
     background: var(--sidebar);
     padding: 20px 16px;
+    padding-top: calc(20px + env(safe-area-inset-top));
     display: flex;
     flex-direction: column;
     gap: 24px;
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .brand {
     display: flex; align-items: center; gap: 8px;
@@ -98,16 +102,16 @@
     background: var(--elevated);
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 10px 14px 10px 36px;
+    padding: 11px 14px 11px 36px;
     border-radius: 20px;
-    font-size: 13px;
+    font-size: 16px; /* iOS Safari auto-zooms on focus for any input under 16px */
     outline: none;
   }
   .search-wrap input:focus { border-color: var(--accent); }
   .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.5; }
   .drop-hint { font-size: 12px; color: var(--text-dim); margin-left: auto; }
 
-  .content { flex: 1; overflow-y: auto; padding: 8px 28px 28px; }
+  .content { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 8px 28px 28px; }
 
   .dropzone {
     border: 1.5px dashed rgba(255,255,255,0.15);
@@ -159,10 +163,10 @@
   .track-title[contenteditable="true"] { outline: 1px solid var(--accent); border-radius: 3px; padding: 0 2px; }
   .track-sub { font-size: 12px; color: var(--text-dim); }
   .col-dur, .col-added { color: var(--text-dim); font-size: 13px; white-space: nowrap; }
-  .row-actions { opacity: 0; display: flex; gap: 10px; }
+  .row-actions { opacity: 0; display: flex; gap: 4px; }
   tr:hover .row-actions { opacity: 1; }
-  .icon-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; display: flex; }
-  .icon-btn:hover { color: var(--text); }
+  .icon-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 10px; display: flex; border-radius: 6px; }
+  .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
   .icon-btn.danger:hover { color: #f15e5e; }
 
   /* Player bar */
@@ -174,6 +178,7 @@
     grid-template-columns: 220px 1fr 220px;
     align-items: center;
     padding: 10px 16px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
     gap: 12px;
     min-height: 72px;
   }
@@ -184,13 +189,14 @@
   .np-sub { font-size: 11px; color: var(--text-dim); }
 
   .player-center { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 620px; margin: 0 auto; width: 100%; }
-  .transport { display: flex; align-items: center; gap: 18px; }
-  .transport button { background: none; border: none; color: var(--text-dim); cursor: pointer; display: flex; padding: 4px; }
+  .transport { display: flex; align-items: center; gap: 12px; }
+  .transport button { background: none; border: none; color: var(--text-dim); cursor: pointer; display: flex; padding: 10px; border-radius: 50%; }
   .transport button:hover { color: var(--text); }
   .play-pause {
     background: var(--text) !important; color: #000 !important;
-    border-radius: 50%; width: 32px; height: 32px;
+    border-radius: 50%; width: 38px; height: 38px;
     align-items: center; justify-content: center;
+    padding: 0 !important;
   }
   .play-pause:hover { transform: scale(1.05); background: #fff !important; }
   .scrub-row { display: flex; align-items: center; gap: 8px; width: 100%; }
@@ -232,6 +238,57 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .pending-row { font-size: 12px; color: var(--text-dim); padding: 6px 12px; }
+  .pending-summary { font-weight: 600; color: var(--text); }
+
+  .mobile-only { display: none; }
+
+  /* Touch devices have no :hover, so anything gated behind it is otherwise
+     invisible and untappable — this was true of the row action buttons and
+     both slider thumbs before this fix. */
+  @media (hover: none), (pointer: coarse) {
+    .row-actions { opacity: 1; }
+    input[type="range"]::-webkit-slider-thumb { opacity: 1; }
+    .drop-hint { display: none; }
+    .desktop-only { display: none; }
+    .mobile-only { display: inline; }
+  }
+
+  /* Phone-width layout: fixed sidebar / 3-column player bar / data table
+     all assume desktop width and don't fit a phone screen. */
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+    .sidebar {
+      flex-direction: row; flex-wrap: wrap; align-items: center;
+      padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top));
+      gap: 10px;
+    }
+    .sidebar .note { display: none; }
+    .sidebar .add-btn { padding: 8px 10px; font-size: 12px; }
+    .sidebar > div { margin-left: auto; }
+    .topbar { padding: 10px 14px; }
+    .content { padding: 6px 14px 14px; }
+    .dropzone { padding: 14px; font-size: 12px; }
+
+    table.tracklist thead { display: none; }
+    table.tracklist, table.tracklist tbody, table.tracklist tr, table.tracklist td { display: block; width: 100%; }
+    table.tracklist tr { display: flex; align-items: center; padding: 8px 2px; gap: 10px; border-bottom: 1px solid var(--border); }
+    .col-idx { display: none; }
+    .col-track { flex: 1; min-width: 0; padding: 0; }
+    .col-added { display: none; }
+    .col-dur { padding: 0; }
+    .col-actions { padding: 0; }
+    tr.playing .track-title { color: var(--accent); }
+
+    .player-bar {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+      padding: 8px 14px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom));
+      row-gap: 6px;
+    }
+    .player-right { display: none; }
+    .now-playing .cover { width: 40px; height: 40px; }
+  }
 </style>
 </head>
 <body>
@@ -263,7 +320,10 @@
     </div>
 
     <div class="content" id="content">
-      <div class="dropzone" id="dropzone">Drop audio or video files here, or use "Add files" in the sidebar</div>
+      <div class="dropzone" id="dropzone">
+        <span class="desktop-only">Drop audio or video files here, or use "Add files" in the sidebar</span>
+        <span class="mobile-only">Use "Add files" above to get started</span>
+      </div>
       <div id="pendingList"></div>
       <div id="listWrap"></div>
       <div class="empty-state" id="emptyState" style="display:none">
@@ -519,7 +579,7 @@
     try {
       const decoded = await Promise.race([
         ctx.decodeAudioData(arrBuf.slice(0)),
-        timeout(20000),
+        timeout(45000),
       ]);
       const blob = audioBufferToWavBlob(decoded);
       const duration = decoded.duration;
@@ -584,6 +644,15 @@
 
   async function handleFiles(fileList) {
     const files = Array.from(fileList);
+    const total = files.length;
+    let doneCount = 0;
+    let summaryEl = null;
+    if (total > 1) {
+      summaryEl = document.createElement('div');
+      summaryEl.className = 'pending-row pending-summary';
+      summaryEl.textContent = `Adding 0 of ${total}…`;
+      els.pendingList.prepend(summaryEl);
+    }
     for (const file of files) {
       const pendingRow = addPendingRow(file.name);
       try {
@@ -628,8 +697,12 @@
           ? 'Ran out of storage space on this device.'
           : err.message;
         toast(`"${file.name}": ${msg}`, true);
+      } finally {
+        doneCount++;
+        if (summaryEl) summaryEl.textContent = `Adding ${doneCount} of ${total}…`;
       }
     }
+    if (summaryEl) summaryEl.remove();
   }
 
   function applySearch() {
@@ -704,7 +777,13 @@
       row.addEventListener('click', () => playById(id));
       // ...except the title itself: while renaming, taps there are for
       // placing the text cursor and shouldn't also trigger playback.
-      row.querySelector('.track-title').addEventListener('click', (e) => e.stopPropagation());
+      // ...except while the title is actively being edited: taps there are
+      // for placing the text cursor and shouldn't also trigger playback.
+      // (Only while editing — otherwise this accidentally ate every tap on
+      // the title/artist text, which is most of each row's tappable area.)
+      row.querySelector('.track-title').addEventListener('click', (e) => {
+        if (e.currentTarget.isContentEditable) e.stopPropagation();
+      });
       row.querySelector('[data-delete]').addEventListener('click', (e) => { e.stopPropagation(); deleteTrack(id); });
       row.querySelector('[data-rename-btn]').addEventListener('click', (e) => { e.stopPropagation(); startRename(id); });
     });
@@ -751,11 +830,20 @@
     const idx = tracks.findIndex(t => t.id === id);
     if (idx === -1) return;
     const wasPlaying = tracks[currentIndex] && tracks[currentIndex].id === id;
-    await dbDelete(id);
+    try {
+      await withTimeout(dbDelete(id), 15000, 'Deleting timed out.');
+    } catch (e) {
+      toast(`Couldn't delete: ${e.message}`, true);
+      return;
+    }
     tracks.splice(idx, 1);
     if (wasPlaying) {
       audio.pause();
       audio.removeAttribute('src');
+      // Revoke immediately rather than waiting for the next play — the
+      // object URL keeps the underlying audio bytes alive in memory
+      // (sometimes tens of MB for a WAV) until revoked.
+      if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
       currentIndex = -1;
       updateNowPlayingUI();
     } else if (currentIndex > idx) {
@@ -872,6 +960,19 @@
   });
 
   els.volume.addEventListener('input', () => { audio.volume = parseFloat(els.volume.value); });
+
+  // iOS deliberately ignores HTMLMediaElement.volume — it's not a bug, Apple
+  // reserves volume control for the hardware buttons on iPhone/iPad. Rather
+  // than show a slider that silently does nothing, disable it there with an
+  // explanation. (This is separate from the CSS breakpoint that hides it on
+  // narrow screens — this covers wider iOS layouts too, e.g. iPad.)
+  const isIOS = /iP(hone|od|ad)/.test(navigator.platform)
+    || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1);
+  if (isIOS) {
+    els.volume.disabled = true;
+    els.volume.title = "Volume is controlled by your device's hardware buttons on iOS";
+    els.volume.parentElement.style.opacity = '0.4';
+  }
 
   els.searchInput.addEventListener('input', renderList);
 
