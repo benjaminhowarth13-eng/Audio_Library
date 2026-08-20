@@ -1,0 +1,1909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Offline Audio Library</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Audio Library">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --sidebar: #000000;
+    --elevated: #161616;
+    --hover: #242424;
+    --accent: #1db954;
+    --accent-dim: #14833b;
+    --text: #ffffff;
+    --text-dim: #a7a7a7;
+    --border: rgba(255,255,255,0.08);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 1fr auto;
+    height: 100vh;
+    height: 100dvh; 
+  }
+  /* Sidebar */
+  .sidebar {
+    grid-row: 1 / 2;
+    background: var(--sidebar);
+    padding: 20px 16px;
+    padding-top: calc(20px + env(safe-area-inset-top));
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 800; font-size: 18px; letter-spacing: -0.3px;
+  }
+  .brand-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .add-btn {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--elevated);
+    border: 1px dashed rgba(255,255,255,0.25);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background .15s, border-color .15s;
+  }
+  .add-btn:hover { background: var(--hover); border-color: var(--accent); }
+  .sidebar-section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 4px;
+  }
+  .stat-line { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+  .note {
+    margin-top: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  /* Main */
+  .main {
+    grid-row: 1 / 2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .topbar {
+    padding: 16px 28px;
+    display: flex; align-items: center; gap: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .search-wrap { position: relative; flex: 1; max-width: 420px; }
+  .search-wrap input {
+    width: 100%;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 11px 14px 11px 36px;
+    border-radius: 20px;
+    font-size: 16px; 
+    outline: none;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.5; }
+  .drop-hint { font-size: 12px; color: var(--text-dim); margin-left: auto; }
+
+  .content { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 8px 28px 28px; }
+
+  .dropzone {
+    border: 1.5px dashed rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 22px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 16px 0 20px;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone.drag { border-color: var(--accent); background: rgba(29,185,84,0.06); color: var(--text); }
+
+  .empty-state {
+    margin-top: 60px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .empty-state h2 { color: var(--text); font-size: 20px; margin-bottom: 6px; }
+
+  table.tracklist { width: 100%; border-collapse: collapse; }
+  table.tracklist thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 600;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg);
+  }
+  table.tracklist td { padding: 8px 12px; font-size: 14px; vertical-align: middle; }
+  table.tracklist tbody tr { border-radius: 4px; cursor: default; }
+  table.tracklist tbody tr:hover { background: var(--hover); }
+  table.tracklist tbody tr.playing { background: rgba(29,185,84,0.08); }
+  .col-idx { width: 36px; color: var(--text-dim); text-align: center; }
+  .col-idx .play-icon { display: none; }
+  tr:hover .col-idx .idx-num { display: none; }
+  tr:hover .col-idx .play-icon { display: inline-flex; cursor: pointer; }
+  tr.playing .col-idx .idx-num { display: none; }
+  tr.playing .col-idx .play-icon { display: inline-flex; color: var(--accent); }
+
+  .track-cell { display: flex; align-items: center; gap: 12px; }
+  .cover {
+    width: 36px; height: 36px; border-radius: 4px; flex-shrink: 0;
+  }
+  .track-title { font-weight: 500; color: var(--text); }
+  .track-title[contenteditable="true"] { outline: 1px solid var(--accent); border-radius: 3px; padding: 0 2px; }
+  .track-sub { font-size: 12px; color: var(--text-dim); }
+  .col-dur, .col-added { color: var(--text-dim); font-size: 13px; white-space: nowrap; }
+  .row-actions { opacity: 0; display: flex; gap: 4px; }
+  tr:hover .row-actions { opacity: 1; }
+  .icon-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 10px; display: flex; border-radius: 6px; }
+  .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .icon-btn.danger:hover { color: #f15e5e; }
+
+  /* Player bar */
+  .player-bar {
+    grid-column: 1 / 3;
+    background: var(--elevated);
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 220px 1fr 220px;
+    align-items: center;
+    padding: 10px 16px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    gap: 12px;
+    min-height: 72px;
+  }
+  .now-playing { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .now-playing .cover { width: 48px; height: 48px; }
+  .np-text { min-width: 0; }
+  .np-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np-sub { font-size: 11px; color: var(--text-dim); }
+
+  .player-center { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 620px; margin: 0 auto; width: 100%; }
+  .transport { display: flex; align-items: center; gap: 12px; }
+  .transport button { background: none; border: none; color: var(--text-dim); cursor: pointer; display: flex; padding: 10px; border-radius: 50%; }
+  .transport button:hover { color: var(--text); }
+  .play-pause {
+    background: var(--text) !important; color: #000 !important;
+    border-radius: 50%; width: 38px; height: 38px;
+    align-items: center; justify-content: center;
+    padding: 0 !important;
+  }
+  .play-pause:hover { transform: scale(1.05); background: #fff !important; }
+  .scrub-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+  .time { font-size: 11px; color: var(--text-dim); width: 38px; text-align: center; flex-shrink: 0; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px; background: rgba(255,255,255,0.2);
+    border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--text); cursor: pointer; opacity: 0;
+    transition: opacity .1s;
+  }
+  .scrub-row:hover input[type="range"]::-webkit-slider-thumb,
+  .volume-row:hover input[type="range"]::-webkit-slider-thumb { opacity: 1; }
+  input[type="range"]:focus::-webkit-slider-thumb { opacity: 1; }
+  .progress-fill-wrap { position: relative; width: 100%; }
+
+  .player-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .volume-row { display: flex; align-items: center; gap: 6px; width: 110px; }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  .toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: #222; border: 1px solid var(--border); padding: 10px 16px;
+    border-radius: 6px; font-size: 13px; z-index: 50;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    max-width: 420px;
+  }
+  .toast.error { border-color: #f15e5e; color: #ffb3b3; }
+  .spinner {
+    width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .7s linear infinite; display: inline-block; margin-right: 6px; vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .pending-row { font-size: 12px; color: var(--text-dim); padding: 6px 12px; }
+  .pending-summary { font-weight: 600; color: var(--text); }
+
+
+  .mobile-only { display: none; }
+
+  @media (hover: none), (pointer: coarse) {
+    .row-actions { opacity: 1; }
+    input[type="range"]::-webkit-slider-thumb { opacity: 1; }
+    .drop-hint { display: none; }
+    .desktop-only { display: none; }
+    .mobile-only { display: inline; }
+  }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+    .sidebar {
+      flex-direction: row; flex-wrap: wrap; align-items: center;
+      padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top));
+      gap: 10px;
+    }
+    .sidebar .note { display: none; }
+    .sidebar .add-btn { padding: 8px 10px; font-size: 12px; }
+    .sidebar-stats { margin-left: auto; }
+    .topbar { padding: 10px 14px; }
+    .content { padding: 6px 14px 14px; }
+    .dropzone { padding: 14px; font-size: 12px; }
+
+    table.tracklist thead { display: none; }
+    table.tracklist, table.tracklist tbody, table.tracklist tr, table.tracklist td { display: block; width: 100%; }
+    table.tracklist tr { display: flex; align-items: center; padding: 8px 2px; gap: 10px; border-bottom: 1px solid var(--border); }
+    .col-idx { display: none; }
+    .col-track { flex: 1; min-width: 0; padding: 0; }
+    .col-added { display: none; }
+    .col-dur { padding: 0; }
+    .col-actions { padding: 0; }
+    tr.playing .track-title { color: var(--accent); }
+
+    .player-bar {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+      padding: 8px 14px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom));
+      row-gap: 6px;
+    }
+    .player-right { display: none; }
+    .now-playing .cover { width: 40px; height: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-dot"></span> Offline Library</div>
+    <button class="add-btn" id="addBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Add audio or video files
+    </button>
+    <input type="file" id="fileInput" multiple accept="audio/*,video/*" style="display:none">
+    <div class="sidebar-stats">
+      <div class="sidebar-section-title">Library</div>
+      <div class="stat-line" id="statLine">0 tracks</div>
+    </div>
+    <div class="note">
+      Files are stored locally as native Blobs to reduce memory use. Playback is designed around Safari and Chrome user-gesture rules.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="search-wrap">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input type="text" id="searchInput" placeholder="Search your library">
+      </div>
+      <div class="drop-hint">Drag files anywhere in this window to add them</div>
+    </div>
+
+    <div class="content" id="content">
+      <div class="dropzone" id="dropzone">
+        <span class="desktop-only">Drop audio or video files here, or use "Add files" in the sidebar</span>
+        <span class="mobile-only">Use "Add files" above to get started</span>
+      </div>
+      <div id="pendingList"></div>
+      <div id="listWrap"></div>
+      <div class="empty-state" id="emptyState" style="display:none">
+        <h2>No tracks yet</h2>
+        <div>Add a file to get started — it'll show up here.</div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="player-bar">
+    <div class="now-playing">
+      <div class="cover" id="npCover" style="background:#282828"></div>
+      <div class="np-text">
+        <div class="np-title" id="npTitle">Nothing playing</div>
+        <div class="np-sub" id="npSub">—</div>
+      </div>
+    </div>
+    <div class="player-center">
+      <div class="transport">
+        <button id="prevBtn" title="Previous">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6L9 12l11 6z"/></svg>
+        </button>
+        <button class="play-pause" id="playBtn" title="Play/Pause">
+          <svg id="playIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button id="nextBtn" title="Next">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l11 6-11 6z"/></svg>
+        </button>
+      </div>
+      <div class="scrub-row">
+        <span class="time" id="curTime">0:00</span>
+        <input type="range" id="scrub" min="0" max="100" value="0" step="0.1">
+        <span class="time" id="durTime">0:00</span>
+      </div>
+    </div>
+    <div class="player-right">
+      <div class="volume-row">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 010 7"/></svg>
+        <input type="range" id="volume" min="0" max="1" value="1" step="0.01">
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // Storage
+  // ---------------------------------------------------------------------------
+  const DB_NAME = 'offlineAudioLibrary';
+  const DB_VERSION = 3;
+  const META_STORE = 'tracksMeta';
+  const FILE_STORE = 'trackFiles';
+  const LEGACY_STORE = 'tracks';
+  const OPFS_DIR = 'offline-audio-library-media';
+
+  const MAX_DECODE_FILE_BYTES = 25 * 1024 * 1024;
+  const MAX_MIME_REWRAP_BYTES = 25 * 1024 * 1024;
+  const MAX_DECODED_PCM_BYTES = 96 * 1024 * 1024;
+  const DECODE_TIMEOUT_MS = 45_000;
+  const MEDIA_LOAD_TIMEOUT_MS = 20_000;
+  const DB_TIMEOUT_MS = 120_000;
+  const DB_RETRY_DELAYS_MS = [250, 750];
+
+  let dbInstance = null;
+  let dbOpenPromise = null;
+  let tracks = [];
+  let filtered = [];
+  let currentIndex = -1;
+  let activeUrl = null;
+  let activeTrackId = null;
+  let activeMedia = null;
+  let prepareToken = 0;
+  let preparing = false;
+  let scrubbing = false;
+  let importRunning = false;
+
+  // ---------------------------------------------------------------------------
+  // Elements
+  // ---------------------------------------------------------------------------
+  const els = {
+    addBtn: document.getElementById('addBtn'),
+    fileInput: document.getElementById('fileInput'),
+    dropzone: document.getElementById('dropzone'),
+    listWrap: document.getElementById('listWrap'),
+    pendingList: document.getElementById('pendingList'),
+    emptyState: document.getElementById('emptyState'),
+    statLine: document.getElementById('statLine'),
+    searchInput: document.getElementById('searchInput'),
+    playBtn: document.getElementById('playBtn'),
+    playIcon: document.getElementById('playIcon'),
+    prevBtn: document.getElementById('prevBtn'),
+    nextBtn: document.getElementById('nextBtn'),
+    scrub: document.getElementById('scrub'),
+    curTime: document.getElementById('curTime'),
+    durTime: document.getElementById('durTime'),
+    volume: document.getElementById('volume'),
+    npTitle: document.getElementById('npTitle'),
+    npSub: document.getElementById('npSub'),
+    npCover: document.getElementById('npCover')
+  };
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function withTimeout(promise, ms, message) {
+    let timer = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(message)), ms);
+        })
+      ]);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  }
+
+  function isRetryableDbError(error) {
+    return !!error && [
+      'InvalidStateError',
+      'TransactionInactiveError',
+      'AbortError'
+    ].includes(error.name);
+  }
+
+  function closeCachedDb() {
+    if (dbInstance) {
+      try { dbInstance.close(); } catch (_) {}
+    }
+    dbInstance = null;
+    dbOpenPromise = null;
+  }
+
+  function openDatabase() {
+    if (dbInstance) return Promise.resolve(dbInstance);
+    if (dbOpenPromise) return dbOpenPromise;
+
+    dbOpenPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error('IndexedDB is unavailable in this browser.'));
+        return;
+      }
+
+      let settled = false;
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const tx = request.transaction;
+        if (!tx) throw new Error('Could not start the storage upgrade.');
+
+        if (!db.objectStoreNames.contains(META_STORE)) {
+          db.createObjectStore(META_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(FILE_STORE)) {
+          db.createObjectStore(FILE_STORE, { keyPath: 'id' });
+        }
+
+        // Migrate the original single-store schema one record at a time.
+        // The old store contains the Blob; the new schema keeps it isolated
+        // from metadata so normal startup/search never loads media bytes.
+        if (db.objectStoreNames.contains(LEGACY_STORE)) {
+          const oldStore = tx.objectStore(LEGACY_STORE);
+          const metaStore = tx.objectStore(META_STORE);
+          const fileStore = tx.objectStore(FILE_STORE);
+          const cursorRequest = oldStore.openCursor();
+
+          cursorRequest.onerror = () => {
+            try { tx.abort(); } catch (_) {}
+          };
+
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) {
+              // Safe only after the cursor has reached the end: the upgrade
+              // transaction is still active at this point.
+              try { db.deleteObjectStore(LEGACY_STORE); } catch (_) {}
+              return;
+            }
+
+            const record = cursor.value || {};
+            const id = record.id;
+            if (id) {
+              const meta = {
+                id,
+                title: String(record.title || 'Untitled'),
+                artist: String(record.artist || 'Unknown artist'),
+                duration: Number.isFinite(Number(record.duration)) ? Number(record.duration) : 0,
+                addedAt: Number(record.addedAt) || Date.now(),
+                mime: String(record.mime || ''),
+                kind: record.kind || (String(record.mime || '').startsWith('video/') ? 'video' : 'audio')
+              };
+              metaStore.put(meta);
+              if (record.data && typeof record.data.size === 'number') {
+                fileStore.put({ id, data: record.data });
+              }
+            }
+            cursor.continue();
+          };
+        }
+      };
+
+      request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        reject(request.error || new Error('Could not open storage.'));
+      };
+
+      request.onblocked = () => {
+        // Do not reject here. A blocked upgrade may unblock immediately after
+        // another tab closes. The request's normal error/success handlers stay
+        // responsible for the final result.
+      };
+
+      request.onsuccess = () => {
+        if (settled) return;
+        settled = true;
+        const db = request.result;
+        db.onversionchange = () => {
+          try { db.close(); } catch (_) {}
+          if (dbInstance === db) dbInstance = null;
+          dbOpenPromise = null;
+        };
+        dbInstance = db;
+        resolve(db);
+      };
+    }).finally(() => {
+      dbOpenPromise = null;
+    });
+
+    return dbOpenPromise;
+  }
+
+  async function dbRun(operation) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= DB_RETRY_DELAYS_MS.length; attempt++) {
+      let db = null;
+      try {
+        db = await openDatabase();
+        return await operation(db);
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableDbError(error) || attempt === DB_RETRY_DELAYS_MS.length) {
+          throw error;
+        }
+        closeCachedDb();
+        await wait(DB_RETRY_DELAYS_MS[attempt]);
+      }
+    }
+    throw lastError || new Error('Database operation failed.');
+  }
+
+  function getAllMeta() {
+    return dbRun(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(META_STORE, 'readonly');
+      const req = tx.objectStore(META_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error || new Error('Could not read library metadata.'));
+    }));
+  }
+
+  function getFileRecord(id) {
+    return dbRun(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(FILE_STORE, 'readonly');
+      const req = tx.objectStore(FILE_STORE).get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error || new Error('Could not load the stored file.'));
+    }));
+  }
+
+  function putTrack(meta, blob) {
+    return dbRun(db => new Promise((resolve, reject) => {
+      const tx = db.transaction([META_STORE, FILE_STORE], 'readwrite');
+      tx.objectStore(META_STORE).put(meta);
+      tx.objectStore(FILE_STORE).put({ id: meta.id, data: blob });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Could not save the file.'));
+      tx.onabort = () => reject(tx.error || new Error('Could not save the file.'));
+    }));
+  }
+
+  function updateMeta(id, patch) {
+    return dbRun(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(META_STORE, 'readwrite');
+      const store = tx.objectStore(META_STORE);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const meta = getReq.result;
+        if (!meta) {
+          reject(new Error('Track not found in storage.'));
+          return;
+        }
+        store.put({ ...meta, ...patch });
+      };
+      getReq.onerror = () => reject(getReq.error || new Error('Could not update track.'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Could not update track.'));
+      tx.onabort = () => reject(tx.error || new Error('Could not update track.'));
+    }));
+  }
+
+  function replaceFile(id, blob, metaPatch = {}) {
+    return dbRun(db => new Promise((resolve, reject) => {
+      const tx = db.transaction([META_STORE, FILE_STORE], 'readwrite');
+      const metaStore = tx.objectStore(META_STORE);
+      const getReq = metaStore.get(id);
+      getReq.onsuccess = () => {
+        const current = getReq.result;
+        if (!current) {
+          reject(new Error('Track not found in storage.'));
+          return;
+        }
+        metaStore.put({ ...current, ...metaPatch });
+        tx.objectStore(FILE_STORE).put({ id, data: blob });
+      };
+      getReq.onerror = () => reject(getReq.error || new Error('Could not update the stored file.'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Could not update the stored file.'));
+      tx.onabort = () => reject(tx.error || new Error('Could not update the stored file.'));
+    }));
+  }
+
+  function deleteTrackFromDB(id) {
+    return dbRun(db => new Promise((resolve, reject) => {
+      const tx = db.transaction([META_STORE, FILE_STORE], 'readwrite');
+      tx.objectStore(META_STORE).delete(id);
+      tx.objectStore(FILE_STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Could not delete the track.'));
+      tx.onabort = () => reject(tx.error || new Error('Could not delete the track.'));
+    }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Origin Private File System (preferred large-media storage)
+  // ---------------------------------------------------------------------------
+  let opfsDirPromise = null;
+  let opfsWorker = null;
+  let opfsWorkerUrl = null;
+  let opfsJobId = 0;
+  const opfsJobs = new Map();
+  let opfsWriteChain = Promise.resolve();
+
+  function hasOpfsWriteSupport() {
+    return !!(
+      navigator.storage &&
+      typeof navigator.storage.getDirectory === 'function' &&
+      window.isSecureContext &&
+      typeof Worker === 'function'
+    );
+  }
+
+  function getOpfsWorker() {
+    if (opfsWorker) return opfsWorker;
+    const workerSource = `
+      let access = null;
+      let currentJob = null;
+      const reply = (id, ok, extra = {}) => self.postMessage({ id, ok, ...extra });
+      const closeAccess = () => { if (access) { try { access.flush(); } catch (_) {} try { access.close(); } catch (_) {} } access = null; currentJob = null; };
+      self.onmessage = async (event) => {
+        const msg = event.data || {};
+        try {
+          if (msg.type === 'start') {
+            closeAccess();
+            const root = await navigator.storage.getDirectory();
+            const dir = await root.getDirectoryHandle(msg.dirName, { create: true });
+            const handle = await dir.getFileHandle(msg.fileName, { create: true });
+            if (typeof handle.createSyncAccessHandle !== 'function') throw new Error('This browser cannot write OPFS files from a worker.');
+            access = await handle.createSyncAccessHandle();
+            currentJob = msg.jobId;
+            access.truncate(0);
+            reply(msg.jobId, true, { phase: 'ready' });
+            return;
+          }
+          if (!access || currentJob !== msg.jobId) throw new Error('OPFS write job is not active.');
+          if (msg.type === 'write') {
+            const bytes = new Uint8Array(msg.buffer);
+            const written = access.write(bytes, { at: msg.offset });
+            if (written !== bytes.byteLength) throw new Error('OPFS wrote fewer bytes than requested.');
+            reply(msg.jobId, true, { phase: 'write', offset: msg.offset, bytes: written });
+            return;
+          }
+          if (msg.type === 'finish') {
+            access.truncate(msg.size);
+            access.flush();
+            closeAccess();
+            reply(msg.jobId, true, { phase: 'done', size: msg.size });
+            return;
+          }
+          if (msg.type === 'abort') {
+            closeAccess();
+            reply(msg.jobId, true, { phase: 'aborted' });
+          }
+        } catch (error) {
+          closeAccess();
+          reply(msg.jobId, false, { message: error && error.message ? error.message : String(error) });
+        }
+      };
+    `;
+    opfsWorkerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+    opfsWorker = new Worker(opfsWorkerUrl);
+    try { URL.revokeObjectURL(opfsWorkerUrl); } catch (_) {}
+    opfsWorkerUrl = null;
+
+    opfsWorker.onmessage = event => {
+      const msg = event.data || {};
+      const job = opfsJobs.get(msg.id);
+      if (!job) return;
+      if (msg.ok) {
+        if (msg.phase === 'write') job.resolve(msg);
+        else if (msg.phase === 'ready' || msg.phase === 'done' || msg.phase === 'aborted') job.resolve(msg);
+      } else {
+        opfsJobs.delete(msg.id);
+        job.reject(new Error(msg.message || 'OPFS worker failed.'));
+      }
+      if (msg.phase !== 'write') opfsJobs.delete(msg.id);
+    };
+    opfsWorker.onerror = event => {
+      const error = new Error(event?.message || 'OPFS worker failed.');
+      for (const [, job] of opfsJobs) job.reject(error);
+      opfsJobs.clear();
+      try { opfsWorker.terminate(); } catch (_) {}
+      opfsWorker = null;
+    };
+    return opfsWorker;
+  }
+
+  function opfsWorkerRequest(message, transfer = []) {
+    const worker = getOpfsWorker();
+    return new Promise((resolve, reject) => {
+      opfsJobs.set(message.id, { resolve, reject });
+      try {
+        worker.postMessage(message, transfer);
+      } catch (error) {
+        opfsJobs.delete(message.id);
+        reject(error);
+      }
+    });
+  }
+
+  async function writeMediaToOpfsWithWorker(id, blob, fileName) {
+    const jobId = `opfs-${++opfsJobId}-${Date.now()}`;
+    await opfsWorkerRequest({ id: jobId, type: 'start', jobId, dirName: OPFS_DIR, fileName });
+    const chunkSize = 4 * 1024 * 1024;
+    try {
+      for (let offset = 0; offset < blob.size; offset += chunkSize) {
+        const end = Math.min(blob.size, offset + chunkSize);
+        const buffer = await blob.slice(offset, end).arrayBuffer();
+        await opfsWorkerRequest({ id: jobId, type: 'write', jobId, offset, buffer }, [buffer]);
+      }
+      await opfsWorkerRequest({ id: jobId, type: 'finish', jobId, size: blob.size });
+    } catch (error) {
+      try { await opfsWorkerRequest({ id: jobId, type: 'abort', jobId }); } catch (_) {}
+      throw error;
+    }
+    const file = await getOpfsFile(id, fileName);
+    if (!file || file.size !== blob.size) throw new Error('OPFS verification failed.');
+    return { name: fileName, file };
+  }
+
+  async function getOpfsDir(create = true) {
+    if (!hasOpfsWriteSupport()) return null;
+    if (!opfsDirPromise) {
+      opfsDirPromise = navigator.storage.getDirectory()
+        .then(root => root.getDirectoryHandle(OPFS_DIR, { create }))
+        .catch(error => {
+          opfsDirPromise = null;
+          throw error;
+        });
+    }
+    return opfsDirPromise;
+  }
+
+  function opfsFileName(id) {
+    return `${id}.media`;
+  }
+
+  async function writeMediaToOpfs(id, blob) {
+    const dir = await getOpfsDir(true);
+    if (!dir) throw new Error('Private file storage is unavailable.');
+    const name = opfsFileName(id);
+
+    const task = async () => {
+      if (typeof (await dir.getFileHandle(name, { create: true })).createWritable === 'function') {
+        const handle = await dir.getFileHandle(name, { create: true });
+        let writable = null;
+        try {
+          writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          writable = null;
+          const file = await handle.getFile();
+          if (!file || file.size !== blob.size) throw new Error('Private file storage returned an incomplete file.');
+          return { name, file };
+        } catch (error) {
+          if (writable && typeof writable.abort === 'function') {
+            try { await writable.abort(); } catch (_) {}
+          }
+          try { await dir.removeEntry(name); } catch (_) {}
+          throw error;
+        }
+      }
+
+      // Safari/WebKit before Safari 26 exposes OPFS but historically only
+      // exposed the synchronous worker write path. The worker writes the file
+      // in 4 MB chunks so a multi-GB library never becomes an ArrayBuffer.
+      if (typeof Worker === 'function') {
+        return writeMediaToOpfsWithWorker(id, blob, name);
+      }
+      throw new Error('This browser cannot write private media storage.');
+    };
+
+    const run = opfsWriteChain.then(task, task);
+    opfsWriteChain = run.catch(() => {});
+    try {
+      return await run;
+    } catch (error) {
+      try { await dir.removeEntry(name); } catch (_) {}
+      throw error;
+    }
+  }
+
+  async function getOpfsFile(id, name = opfsFileName(id)) {
+    const dir = await getOpfsDir(false);
+    if (!dir) return null;
+    try {
+      const handle = await dir.getFileHandle(name, { create: false });
+      const file = await handle.getFile();
+      return file && file.size >= 0 ? file : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function deleteOpfsFile(id, name = opfsFileName(id)) {
+    const dir = await getOpfsDir(false);
+    if (!dir) return;
+    try { await dir.removeEntry(name); } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // General helpers
+  // ---------------------------------------------------------------------------
+  function makeId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      try { return window.crypto.randomUUID(); } catch (_) {}
+    }
+    return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function fmtTime(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) return '0:00';
+    const total = Math.floor(value);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    return `${minutes}:${String(secs).padStart(2, '0')}`;
+  }
+
+  function hueFor(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+    return h;
+  }
+
+  function coverStyle(title) {
+    const h = hueFor(title || 'x');
+    return `background:linear-gradient(135deg,hsl(${h},55%,35%),hsl(${(h + 50) % 360},55%,20%))`;
+  }
+
+  let toastTimer = null;
+  function toast(message, isError = false) {
+    const old = document.querySelector('.toast');
+    if (old) old.remove();
+    if (toastTimer) clearTimeout(toastTimer);
+    const t = document.createElement('div');
+    t.className = `toast${isError ? ' error' : ''}`;
+    t.textContent = message;
+    document.body.appendChild(t);
+    toastTimer = setTimeout(() => {
+      t.remove();
+      toastTimer = null;
+    }, isError ? 6000 : 3000);
+  }
+
+  function createMediaElement(tagName) {
+    const el = document.createElement(tagName);
+    el.preload = 'auto';
+    el.playsInline = true;
+    el.setAttribute('playsinline', '');
+    el.setAttribute('webkit-playsinline', '');
+    el.controls = false;
+    el.muted = false;
+    el.style.position = 'fixed';
+    el.style.width = '1px';
+    el.style.height = '1px';
+    el.style.left = '-10000px';
+    el.style.top = '-10000px';
+    el.style.opacity = '0';
+    el.style.pointerEvents = 'none';
+    el.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(el);
+    return el;
+  }
+
+  const audio = createMediaElement('audio');
+  const video = createMediaElement('video');
+  let media = audio;
+  audio.volume = 1;
+  video.volume = 1;
+
+  // ---------------------------------------------------------------------------
+  // Media inspection / compatibility
+  // ---------------------------------------------------------------------------
+  function mimeForFilename(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const map = {
+      mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'video/mp4', aac: 'audio/aac',
+      wav: 'audio/wav', wave: 'audio/wav', flac: 'audio/flac', ogg: 'audio/ogg',
+      oga: 'audio/ogg', opus: 'audio/ogg; codecs=opus', caf: 'audio/x-caf',
+      aiff: 'audio/aiff', aif: 'audio/aiff', wma: 'audio/x-ms-wma',
+      mov: 'video/quicktime', m4v: 'video/x-m4v', webm: 'video/webm',
+      avi: 'video/x-msvideo', mkv: 'video/x-matroska', '3gp': 'video/3gpp',
+      '3gpp': 'video/3gpp'
+    };
+    return map[ext] || '';
+  }
+
+  function classifyFile(file) {
+    const type = String(file.type || '').toLowerCase();
+    if (type.startsWith('audio/')) return 'audio';
+    if (type.startsWith('video/')) return 'video';
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (['mp3','m4a','aac','wav','wave','flac','ogg','oga','opus','caf','aiff','aif','wma'].includes(ext)) return 'audio';
+    if (['mp4','mov','m4v','webm','avi','mkv','3gp','3gpp'].includes(ext)) return 'video';
+    return null;
+  }
+
+  function kindFromMeta(meta, blob) {
+    if (meta.kind === 'video' || meta.kind === 'audio') return meta.kind;
+    const mime = String(meta.mime || blob?.type || '').toLowerCase();
+    return mime.startsWith('video/') ? 'video' : 'audio';
+  }
+
+  function getSignature(blob) {
+    return blob.slice(0, 16).arrayBuffer().then(buffer => {
+      const bytes = new Uint8Array(buffer);
+      const ascii = Array.from(bytes, b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
+      if (ascii.startsWith('ID3')) return 'mp3';
+      if (bytes.length >= 2 && bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) return 'mp3';
+      if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WAVE') return 'wav';
+      if (ascii.slice(4, 8) === 'ftyp') return 'mp4/m4a';
+      if (ascii.startsWith('OggS')) return 'ogg/opus';
+      if (ascii.startsWith('fLaC')) return 'flac';
+      if (ascii.startsWith('FORM') && (ascii.slice(8, 12) === 'AIFF' || ascii.slice(8, 12) === 'AIFC')) return 'aiff';
+      if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'AVI ') return 'avi';
+      if (ascii.startsWith('\u001aE\u00df\u00a3')) return 'webm/matroska';
+      return 'unknown';
+    }).catch(() => 'unknown');
+  }
+
+  function loadMediaElement(element, source, timeoutMs = MEDIA_LOAD_TIMEOUT_MS) {
+    return new Promise((resolve, reject) => {
+      let timer = null;
+      let settled = false;
+
+      const cleanup = () => {
+        element.removeEventListener('loadedmetadata', onReady);
+        element.removeEventListener('durationchange', onReady);
+        element.removeEventListener('loadeddata', onReady);
+        element.removeEventListener('canplay', onReady);
+        element.removeEventListener('error', onError);
+        element.removeEventListener('abort', onAbort);
+        if (timer !== null) clearTimeout(timer);
+      };
+
+      const finish = (fn) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn();
+      };
+
+      const onReady = () => {
+        const duration = Number.isFinite(element.duration) ? element.duration : 0;
+        const ready = element.readyState >= HTMLMediaElement.HAVE_METADATA;
+        if (ready && (!element.error || element.error.code !== 4)) {
+          finish(() => resolve({ duration }));
+        }
+      };
+
+      const onError = () => {
+        const error = element.error;
+        const out = new Error(mediaErrorText(error));
+        out.mediaCode = error ? error.code : 0;
+        finish(() => reject(out));
+      };
+
+      const onAbort = () => finish(() => reject(new Error('Media loading was aborted.')));
+
+      element.addEventListener('loadedmetadata', onReady);
+      element.addEventListener('durationchange', onReady);
+      element.addEventListener('loadeddata', onReady);
+      element.addEventListener('canplay', onReady);
+      element.addEventListener('error', onError);
+      element.addEventListener('abort', onAbort);
+      timer = setTimeout(() => finish(() => reject(new Error('Media loading timed out.'))), timeoutMs);
+
+      try {
+        if (source && source.mode === 'srcObject') {
+          element.src = '';
+          element.removeAttribute('src');
+          element.srcObject = source.blob;
+        } else {
+          try { element.srcObject = null; } catch (_) {}
+          element.src = source.url;
+        }
+        element.load();
+      } catch (error) {
+        finish(() => reject(error));
+      }
+    });
+  }
+
+  function mediaErrorText(error) {
+    switch (error?.code) {
+      case 1: return 'Media loading was aborted.';
+      case 2: return 'The stored media could not be read.';
+      case 3: return 'The stored media could be read but could not be decoded.';
+      case 4: return 'This media format is not supported by the browser.';
+      default: return 'The stored media could not be loaded.';
+    }
+  }
+
+  function signatureKind(signature) {
+    if (['mp3', 'wav', 'flac', 'ogg/opus', 'aiff'].includes(signature)) return 'audio';
+    return 'video';
+  }
+
+  function expectedMimeForSignature(signature) {
+    switch (signature) {
+      case 'mp3': return 'audio/mpeg';
+      case 'wav': return 'audio/wav';
+      case 'flac': return 'audio/flac';
+      case 'ogg/opus': return 'audio/ogg';
+      case 'aiff': return 'audio/aiff';
+      case 'mp4/m4a': return 'video/mp4';
+      case 'webm/matroska': return 'video/webm';
+      case 'avi': return 'video/x-msvideo';
+      default: return '';
+    }
+  }
+
+  function canUseBlobSrcObject(element) {
+    return 'srcObject' in element;
+  }
+
+  function makeSourceCandidates(blob, signature) {
+    const sources = [];
+    if (canUseBlobSrcObject(audio) || canUseBlobSrcObject(video)) {
+      // Safari/WebKit supports Blob/File in srcObject; Chromium uses blob URLs
+      // as the portable path. Try srcObject first only where the target element
+      // actually exposes it, then always try a blob URL.
+      sources.push({ mode: 'srcObject', blob });
+    }
+
+    const url = URL.createObjectURL(blob);
+    sources.push({ mode: 'url', url });
+
+    // If the stored MIME is empty/wrong, a same-bytes MIME wrapper can rescue
+    // some engines. Limit this to 100 MB so it is never used as a large-file
+    // memory strategy.
+    const expected = expectedMimeForSignature(signature);
+    if (expected && blob.size <= MAX_MIME_REWRAP_BYTES && blob.type !== expected) {
+      try {
+        const typed = new Blob([blob], { type: expected });
+        const typedUrl = URL.createObjectURL(typed);
+        sources.push({ mode: 'url', url: typedUrl, ownedUrl: typedUrl });
+      } catch (_) {}
+    }
+    return sources;
+  }
+
+  async function loadBlobIntoElement(element, blob, signature) {
+    const sources = makeSourceCandidates(blob, signature);
+    let lastError = null;
+    let chosenSource = null;
+    try {
+      for (const source of sources) {
+        try {
+          const result = await loadMediaElement(element, source);
+          chosenSource = source;
+          return { ...result, source };
+        } catch (error) {
+          lastError = error;
+          releaseElement(element);
+        }
+      }
+      throw lastError || new Error('Media could not be loaded.');
+    } finally {
+      for (const source of sources) {
+        if (source !== chosenSource && source.mode === 'url' && source.url) {
+          try { URL.revokeObjectURL(source.url); } catch (_) {}
+        }
+      }
+    }
+  }
+
+  async function probeBlob(blob, kind, meta = {}) {
+    if (!blob || typeof blob.size !== 'number' || blob.size <= 0) {
+      return { playable: false, duration: 0, signature: 'empty', error: new Error('The stored media file is empty.') };
+    }
+
+    const signature = await getSignature(blob);
+    const preferred = signatureKind(signature);
+    const elementKinds = preferred === 'audio' ? ['audio', 'video'] : (kind === 'audio' ? ['audio', 'video'] : ['video', 'audio']);
+    let lastError = null;
+
+    for (const elementKind of elementKinds) {
+      const element = createMediaElement(elementKind);
+      try {
+        const result = await loadBlobIntoElement(element, blob, signature);
+        if (result.source?.mode === 'url' && result.source.url) {
+          try { URL.revokeObjectURL(result.source.url); } catch (_) {}
+        }
+        return { playable: true, duration: result.duration, signature, elementKind };
+      } catch (error) {
+        lastError = error;
+      } finally {
+        releaseElement(element);
+        try { element.remove(); } catch (_) {}
+      }
+    }
+
+    return { playable: false, duration: 0, signature, error: lastError };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Import
+  // ---------------------------------------------------------------------------
+  function addPendingRow(name) {
+    const row = document.createElement('div');
+    row.className = 'pending-row';
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    row.append(spinner, document.createTextNode(`Processing "${name}"…`));
+    els.pendingList.appendChild(row);
+    return row;
+  }
+
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []).filter(file => file && typeof file.size === 'number');
+    if (!files.length || importRunning) return;
+
+    importRunning = true;
+    els.addBtn.disabled = true;
+    const total = files.length;
+    let done = 0;
+    let summary = null;
+
+    if (total > 1) {
+      summary = document.createElement('div');
+      summary.className = 'pending-row pending-summary';
+      summary.textContent = `Adding 0 of ${total}…`;
+      els.pendingList.prepend(summary);
+    }
+
+    try {
+      for (const file of files) {
+        const row = addPendingRow(file.name);
+        let createdOpfsId = null;
+        try {
+          let kind = classifyFile(file);
+          if (!kind) throw new Error('Unsupported audio or video file.');
+          if (!file.size) throw new Error('The selected file is empty.');
+
+          const initialMime = file.type || mimeForFilename(file.name);
+          const baseMeta = {
+            title: file.name.replace(/\.[^/.]+$/, '') || 'Untitled',
+            artist: 'Unknown artist',
+            mime: initialMime,
+            kind
+          };
+
+          let blob = file;
+          let mime = initialMime;
+          let duration = 0;
+          let normalized = false;
+
+          const probe = await probeBlob(file, kind, baseMeta);
+          duration = probe.duration;
+          mime = file.type || initialMime;
+          if (!probe.playable) {
+            toast(`Added "${baseMeta.title}". The file was stored unchanged, but this browser could not verify that its codec is playable.`, true);
+          }
+
+          // Prefer the format the bytes actually contain over a misleading
+          // MIME/type label. This is especially useful for old imported records.
+          if (probe.elementKind && probe.elementKind !== kind) kind = probe.elementKind;
+
+          const meta = {
+            id: makeId(),
+            title: baseMeta.title,
+            artist: kind === 'video' ? 'Video' : 'Unknown artist',
+            duration: Number.isFinite(duration) ? duration : 0,
+            addedAt: Date.now(),
+            mime,
+            kind,
+            originalName: file.name,
+            fileSize: blob.size,
+            normalized: false,
+            storage: 'idb'
+          };
+
+          let stored = false;
+          if (hasOpfsWriteSupport()) {
+            try {
+              const result = await withTimeout(writeMediaToOpfs(meta.id, blob), DB_TIMEOUT_MS, 'Saving the media file timed out.');
+              meta.storage = 'opfs';
+              meta.fileName = result.name;
+              createdOpfsId = meta.id;
+              stored = true;
+            } catch (_) {
+              // Fall back to IndexedDB below.
+              await deleteOpfsFile(meta.id, meta.fileName);
+            }
+          }
+
+          if (!stored) {
+            await withTimeout(putTrack(meta, blob), DB_TIMEOUT_MS, 'Saving the file to the library timed out.');
+          } else {
+            await withTimeout(dbRun(db => new Promise((resolve, reject) => {
+              const tx = db.transaction(META_STORE, 'readwrite');
+              tx.objectStore(META_STORE).put(meta);
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => reject(tx.error || new Error('Could not save the library metadata.'));
+              tx.onabort = () => reject(tx.error || new Error('Could not save the library metadata.'));
+            })), DB_TIMEOUT_MS, 'Saving the library metadata timed out.');
+          }
+          if (navigator.storage && navigator.storage.persist) {
+            try { await navigator.storage.persist(); } catch (_) {}
+          }
+          tracks.unshift(meta);
+          row.remove();
+          render();
+        } catch (error) {
+          if (createdOpfsId) await deleteOpfsFile(createdOpfsId, opfsFileName(createdOpfsId));
+          row.remove();
+          const message = error?.name === 'QuotaExceededError'
+            ? 'Not enough device storage is available.'
+            : (error?.message || 'Could not add this file.');
+          toast(`"${file.name}": ${message}`, true);
+        } finally {
+          done++;
+          if (summary) summary.textContent = `Adding ${done} of ${total}…`;
+        }
+      }
+    } finally {
+      if (summary) summary.remove();
+      els.addBtn.disabled = false;
+      importRunning = false;
+    }
+  }
+
+  async function getStoredMedia(meta) {
+    if (meta.storage === 'opfs') {
+      const file = await getOpfsFile(meta.id, meta.fileName || opfsFileName(meta.id));
+      if (file) return { blob: file, storage: 'opfs' };
+    }
+
+    const record = await withTimeout(getFileRecord(meta.id), 30000, 'Loading this track timed out.');
+    if (!record || !record.data || typeof record.data.size !== 'number') {
+      throw new Error('The media file is missing from storage.');
+    }
+    const blob = record.data;
+    if (blob.size <= 0) throw new Error('The stored media file is empty.');
+
+    // Existing versions stored media Blobs in IndexedDB. On browsers with OPFS
+    // support, move that Blob to the private file system lazily when the track
+    // is actually used. This avoids keeping a WebKit-sensitive Blob as the
+    // primary long-term representation.
+    if (hasOpfsWriteSupport()) {
+      try {
+        const result = await writeMediaToOpfs(meta.id, blob);
+        meta.storage = 'opfs';
+        meta.fileName = result.name;
+        meta.fileSize = result.file.size;
+        void updateMeta(meta.id, {
+          storage: 'opfs',
+          fileName: result.name,
+          fileSize: result.file.size
+        }).catch(() => {});
+        void dbRun(db => new Promise((resolve, reject) => {
+          const tx = db.transaction(FILE_STORE, 'readwrite');
+          tx.objectStore(FILE_STORE).delete(meta.id);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error('Could not remove the migrated backup.'));
+          tx.onabort = () => reject(tx.error || new Error('Could not remove the migrated backup.'));
+        })).catch(() => {});
+        return { blob: result.file, storage: 'opfs' };
+      } catch (_) {
+        // Keep using the IndexedDB fallback if OPFS is temporarily unavailable.
+      }
+    }
+
+    return { blob, storage: 'idb' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Library rendering
+  // ---------------------------------------------------------------------------
+  function applySearch() {
+    const q = els.searchInput.value.trim().toLowerCase();
+    filtered = q
+      ? tracks.filter(t => String(t.title || '').toLowerCase().includes(q) || String(t.artist || '').toLowerCase().includes(q))
+      : tracks.slice();
+    renderList();
+  }
+
+  function render() {
+    els.statLine.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+    els.emptyState.style.display = tracks.length ? 'none' : 'block';
+    applySearch();
+  }
+
+  function renderList() {
+    const list = els.searchInput.value.trim() ? filtered : tracks;
+    if (!tracks.length || !list.length) {
+      els.listWrap.innerHTML = list.length ? '' : (tracks.length ? '<div style="color:var(--text-dim);padding:20px 12px;font-size:13px;">No matches.</div>' : '');
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'tracklist';
+    table.innerHTML = '<thead><tr><th class="col-idx">#</th><th>Title</th><th>Added</th><th>Duration</th><th></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    list.forEach((track, index) => {
+      const row = document.createElement('tr');
+      row.dataset.id = track.id;
+      if (tracks[currentIndex]?.id === track.id) row.className = 'playing';
+
+      const idx = document.createElement('td');
+      idx.className = 'col-idx';
+      idx.innerHTML = `<span class="idx-num">${index + 1}</span><span class="play-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>`;
+
+      const titleCell = document.createElement('td');
+      titleCell.className = 'col-track';
+      const trackCell = document.createElement('div');
+      trackCell.className = 'track-cell';
+      const cover = document.createElement('div');
+      cover.className = 'cover';
+      cover.setAttribute('style', coverStyle(track.title));
+      const text = document.createElement('div');
+      text.className = 'track-text';
+      const title = document.createElement('div');
+      title.className = 'track-title';
+      title.dataset.rename = track.id;
+      title.textContent = track.title;
+      const sub = document.createElement('div');
+      sub.className = 'track-sub';
+      sub.textContent = track.artist || '';
+      text.append(title, sub);
+      trackCell.append(cover, text);
+      titleCell.appendChild(trackCell);
+
+      const added = document.createElement('td');
+      added.className = 'col-added';
+      added.textContent = track.addedAt ? new Date(track.addedAt).toLocaleDateString() : '—';
+
+      const duration = document.createElement('td');
+      duration.className = 'col-dur';
+      duration.textContent = fmtTime(track.duration);
+
+      const actions = document.createElement('td');
+      actions.className = 'col-actions';
+      const actionsWrap = document.createElement('div');
+      actionsWrap.className = 'row-actions';
+      const rename = document.createElement('button');
+      rename.className = 'icon-btn';
+      rename.type = 'button';
+      rename.dataset.renameBtn = track.id;
+      rename.title = 'Rename';
+      rename.setAttribute('aria-label', 'Rename');
+      rename.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>';
+      const del = document.createElement('button');
+      del.className = 'icon-btn danger';
+      del.type = 'button';
+      del.dataset.delete = track.id;
+      del.title = 'Delete';
+      del.setAttribute('aria-label', 'Delete');
+      del.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
+      actionsWrap.append(rename, del);
+      actions.appendChild(actionsWrap);
+
+      row.append(idx, titleCell, added, duration, actions);
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    els.listWrap.replaceChildren(table);
+  }
+
+  // Event delegation avoids creating new listeners for every table render.
+  els.listWrap.addEventListener('click', event => {
+    const row = event.target.closest('tr[data-id]');
+    if (!row) return;
+    const id = row.dataset.id;
+    const deleteButton = event.target.closest('[data-delete]');
+    const renameButton = event.target.closest('[data-rename-btn]');
+    if (deleteButton) {
+      event.stopPropagation();
+      void deleteTrack(id);
+      return;
+    }
+    if (renameButton) {
+      event.stopPropagation();
+      startRename(id);
+      return;
+    }
+    if (event.target.closest('[contenteditable="true"]')) return;
+    selectTrack(id);
+  });
+
+  function startRename(id) {
+    const el = Array.from(els.listWrap.querySelectorAll('[data-rename]')).find(node => node.dataset.rename === id);
+    if (!el) return;
+    el.contentEditable = 'true';
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    let finished = false;
+    const cleanup = () => {
+      el.removeEventListener('blur', onBlur);
+      el.removeEventListener('keydown', onKey);
+      el.contentEditable = 'false';
+    };
+    const finish = async (save) => {
+      if (finished) return;
+      finished = true;
+      const original = tracks.find(t => t.id === id);
+      const newTitle = save ? (el.textContent.trim() || 'Untitled') : original?.title || 'Untitled';
+      cleanup();
+      if (!original || newTitle === original.title) {
+        renderList();
+        return;
+      }
+      const oldTitle = original.title;
+      original.title = newTitle;
+      try {
+        await withTimeout(updateMeta(id, { title: newTitle }), 20000, 'Saving the rename timed out.');
+      } catch (error) {
+        original.title = oldTitle;
+        toast(`Could not rename: ${error.message}`, true);
+      }
+      if (tracks[currentIndex]?.id === id) updateNowPlayingUI();
+      renderList();
+    };
+    const onBlur = () => { void finish(true); };
+    const onKey = event => {
+      if (event.key === 'Enter') { event.preventDefault(); el.blur(); }
+      if (event.key === 'Escape') { event.preventDefault(); void finish(false); }
+    };
+    el.addEventListener('blur', onBlur);
+    el.addEventListener('keydown', onKey);
+  }
+
+  async function deleteTrack(id) {
+    const index = tracks.findIndex(t => t.id === id);
+    if (index < 0) return;
+    const wasPlaying = currentIndex === index;
+    const wasCurrentId = tracks[currentIndex]?.id === id;
+
+    try {
+      await withTimeout(deleteTrackFromDB(id), 20000, 'Deleting the track timed out.');
+      await deleteOpfsFile(id, tracks[index].fileName || opfsFileName(id));
+    } catch (error) {
+      toast(`Could not delete: ${error.message}`, true);
+      return;
+    }
+
+    tracks.splice(index, 1);
+    if (wasCurrentId) {
+      currentIndex = -1;
+      ++prepareToken;
+      releaseCurrentMedia();
+      updateNowPlayingUI();
+    } else if (currentIndex > index) {
+      currentIndex--;
+    }
+    render();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Playback
+  // ---------------------------------------------------------------------------
+  function releaseElement(element) {
+    try { element.pause(); } catch (_) {}
+    try { element.removeAttribute('src'); } catch (_) {}
+    try { element.src = ''; } catch (_) {}
+    try { element.srcObject = null; } catch (_) {}
+    try { element.load(); } catch (_) {}
+  }
+
+  function releaseCurrentMedia() {
+    ++prepareToken;
+    releaseElement(audio);
+    releaseElement(video);
+    if (activeUrl) {
+      try { URL.revokeObjectURL(activeUrl); } catch (_) {}
+    }
+    activeUrl = null;
+    activeTrackId = null;
+    activeMedia = null;
+    setPlayIcon(false);
+    els.scrub.value = '0';
+    els.scrub.max = '0';
+    els.curTime.textContent = '0:00';
+    els.durTime.textContent = '0:00';
+  }
+
+  function updateNowPlayingUI() {
+    const track = tracks[currentIndex];
+    if (!track) {
+      els.npTitle.textContent = 'Nothing playing';
+      els.npSub.textContent = '—';
+      els.npCover.style.background = '#282828';
+      els.durTime.textContent = '0:00';
+      els.curTime.textContent = '0:00';
+      els.scrub.value = '0';
+      els.scrub.max = '0';
+      setPlayIcon(false);
+      return;
+    }
+    els.npTitle.textContent = track.title;
+    els.npSub.textContent = track.artist || '';
+    els.npCover.setAttribute('style', coverStyle(track.title));
+    els.durTime.textContent = fmtTime(track.duration);
+  }
+
+  function setPlayIcon(playing) {
+    els.playIcon.innerHTML = playing
+      ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>'
+      : '<path d="M8 5v14l11-7z"/>';
+  }
+
+  function setPreparing(value) {
+    preparing = value;
+    els.playBtn.disabled = value;
+    els.playBtn.setAttribute('aria-busy', String(value));
+  }
+
+  async function prepareTrack(index) {
+    if (index < 0 || index >= tracks.length) return false;
+    const meta = tracks[index];
+    if (activeTrackId === meta.id && activeUrl && activeMedia && activeMedia.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      return true;
+    }
+
+    setPreparing(true);
+    releaseCurrentMedia();
+    const token = ++prepareToken;
+
+    try {
+      const stored = await getStoredMedia(meta);
+      if (token !== prepareToken) return false;
+      const blob = stored.blob;
+      if (!blob || typeof blob.size !== 'number' || blob.size <= 0) {
+        throw new Error('The stored media file is empty.');
+      }
+
+      if (meta.fileSize && Number(meta.fileSize) !== blob.size) {
+        throw new Error(`The stored file is incomplete (${(blob.size / 1024 / 1024).toFixed(1)} MB retrieved, ${(Number(meta.fileSize) / 1024 / 1024).toFixed(1)} MB expected).`);
+      }
+      const signature = await getSignature(blob);
+      const signatureActualKind = signatureKind(signature);
+      const baseKind = meta.kind === 'video' ? 'video' : 'audio';
+      const candidateKinds = signatureActualKind === 'audio'
+        ? ['audio', 'video']
+        : (baseKind === 'audio' ? ['audio', 'video'] : ['video', 'audio']);
+
+      let chosen = null;
+      let duration = 0;
+      let lastError = null;
+      let actualKind = baseKind;
+      let actualSourceUrl = null;
+
+      for (const candidateKind of candidateKinds) {
+        const element = candidateKind === 'video' ? video : audio;
+        releaseElement(element);
+        try {
+          const result = await loadBlobIntoElement(element, blob, signature);
+          chosen = element;
+          duration = result.duration;
+          actualKind = candidateKind;
+          actualSourceUrl = result.source.mode === 'url' ? result.source.url : null;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!chosen) {
+        const detected = signature === 'unknown' ? 'unknown file type' : `detected ${signature}`;
+        const sizeMb = (blob.size / 1024 / 1024).toFixed(1);
+        throw new Error(`This stored file cannot be decoded here (${sizeMb} MB, ${detected}, MIME ${blob.type || 'none'}).`);
+      }
+
+      if (token !== prepareToken) {
+        if (actualSourceUrl) URL.revokeObjectURL(actualSourceUrl);
+        releaseElement(chosen);
+        return false;
+      }
+
+      activeUrl = actualSourceUrl;
+      activeTrackId = meta.id;
+      activeMedia = chosen;
+      media = chosen;
+      setVolumeOnMedia(chosen);
+      els.scrub.max = String(Math.max(0, duration));
+      els.scrub.value = '0';
+      els.curTime.textContent = '0:00';
+      els.durTime.textContent = fmtTime(duration);
+
+      // Self-heal legacy records where metadata says video but the stored bytes
+      // are actually audio (for example older video-to-WAV imports).
+      if (actualKind !== meta.kind) {
+        meta.kind = actualKind;
+        meta.mime = blob.type || meta.mime || '';
+        void updateMeta(meta.id, { kind: actualKind, mime: meta.mime }).catch(() => {});
+      }
+      if (duration > 0 && Math.abs((meta.duration || 0) - duration) > 0.5) {
+        meta.duration = duration;
+        void updateMeta(meta.id, { duration }).catch(() => {});
+      }
+
+      return true;
+    } catch (error) {
+      if (token === prepareToken) {
+        releaseCurrentMedia();
+        toast(`Could not load: ${error.message}`, true);
+      }
+      return false;
+    } finally {
+      if (token === prepareToken) setPreparing(false);
+    }
+  }
+
+  function setVolumeOnMedia(element) {
+    element.volume = Number(els.volume.value);
+  }
+
+  function selectTrack(id) {
+    const index = tracks.findIndex(t => t.id === id);
+    if (index < 0) return;
+    currentIndex = index;
+    updateNowPlayingUI();
+    renderList();
+    void prepareTrack(index).then(ready => {
+      if (ready && currentIndex === index) toast('Ready — tap Play.');
+    });
+  }
+
+  function attemptPlaybackFromGesture() {
+    if (!activeMedia || !activeTrackId || activeTrackId !== tracks[currentIndex]?.id) {
+      toast('Select a track and wait for it to say Ready.', true);
+      return;
+    }
+    if (!activeMedia.paused) {
+      activeMedia.pause();
+      return;
+    }
+
+    const result = activeMedia.play();
+    if (result && typeof result.catch === 'function') {
+      result.catch(error => {
+        const name = error?.name || '';
+        if (name === 'NotAllowedError') {
+          toast('Playback was blocked. Tap Play once more.', true);
+        } else if (name === 'NotSupportedError') {
+          toast('The stored media is not playable in this browser.', true);
+        } else {
+          toast(`Playback could not start: ${error?.message || 'unknown error'}.`, true);
+        }
+        setPlayIcon(false);
+      });
+    }
+  }
+
+  function changeTrack(delta) {
+    if (!tracks.length) return;
+    const next = currentIndex < 0 ? 0 : (currentIndex + delta + tracks.length) % tracks.length;
+    currentIndex = next;
+    updateNowPlayingUI();
+    renderList();
+    // Do not auto-play the next track. This preserves iOS user activation rules.
+    void prepareTrack(next).then(ready => {
+      if (ready && currentIndex === next) toast('Ready — tap Play.');
+    });
+  }
+
+  els.playBtn.addEventListener('click', () => {
+    if (preparing) return;
+    if (currentIndex < 0) {
+      if (!tracks.length) return;
+      selectTrack(tracks[0].id);
+      return;
+    }
+    attemptPlaybackFromGesture();
+  });
+
+  els.prevBtn.addEventListener('click', () => {
+    if (!tracks.length) return;
+    if (activeMedia && activeMedia.currentTime > 3) {
+      activeMedia.currentTime = 0;
+      return;
+    }
+    changeTrack(-1);
+  });
+
+  els.nextBtn.addEventListener('click', () => changeTrack(1));
+
+  function bindMediaEvents(element) {
+    element.addEventListener('play', () => {
+      if (element === activeMedia) setPlayIcon(true);
+    });
+    element.addEventListener('pause', () => {
+      if (element === activeMedia) setPlayIcon(false);
+    });
+    element.addEventListener('ended', () => {
+      if (element === activeMedia) changeTrack(1);
+    });
+    element.addEventListener('loadedmetadata', () => {
+      if (element !== activeMedia) return;
+      const duration = Number.isFinite(element.duration) ? element.duration : 0;
+      els.scrub.max = String(Math.max(0, duration));
+      els.durTime.textContent = fmtTime(duration);
+      const track = tracks[currentIndex];
+      if (track && duration > 0 && Math.abs((track.duration || 0) - duration) > 0.5) {
+        track.duration = duration;
+        void updateMeta(track.id, { duration }).catch(() => {});
+      }
+    });
+    element.addEventListener('timeupdate', () => {
+      if (element !== activeMedia || scrubbing) return;
+      els.scrub.value = String(element.currentTime || 0);
+      els.curTime.textContent = fmtTime(element.currentTime);
+    });
+    element.addEventListener('error', () => {
+      if (element !== activeMedia) return;
+      setPlayIcon(false);
+    });
+  }
+
+  bindMediaEvents(audio);
+  bindMediaEvents(video);
+
+  // ---------------------------------------------------------------------------
+  // UI controls
+  // ---------------------------------------------------------------------------
+  els.scrub.addEventListener('input', () => {
+    scrubbing = true;
+    const value = Number(els.scrub.value) || 0;
+    els.curTime.textContent = fmtTime(value);
+  });
+
+  els.scrub.addEventListener('change', () => {
+    if (activeMedia) activeMedia.currentTime = Number(els.scrub.value) || 0;
+    scrubbing = false;
+  });
+
+  els.volume.addEventListener('input', () => {
+    const value = Number(els.volume.value);
+    audio.volume = value;
+    video.volume = value;
+  });
+
+  const isIOS = /iP(hone|od|ad)/.test(navigator.platform) ||
+    (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1);
+  if (isIOS) {
+    els.volume.disabled = true;
+    els.volume.title = 'Volume is controlled by your device volume buttons on iOS.';
+    els.volume.parentElement.style.opacity = '0.4';
+  }
+
+  els.searchInput.addEventListener('input', applySearch);
+
+  // Keep the file picker call directly inside the button gesture.
+  els.addBtn.addEventListener('click', event => {
+    event.preventDefault();
+    if (importRunning || els.addBtn.disabled) return;
+    try { els.fileInput.click(); } catch (_) { toast('The file picker could not be opened.', true); }
+  });
+
+  els.fileInput.addEventListener('change', event => {
+    const files = event.target.files;
+    event.target.value = '';
+    if (files && files.length) void handleFiles(files);
+  });
+
+  ['dragenter', 'dragover'].forEach(type => {
+    document.addEventListener(type, event => {
+      event.preventDefault();
+      els.dropzone.classList.add('drag');
+    });
+  });
+
+  document.addEventListener('dragleave', event => {
+    event.preventDefault();
+    if (!event.relatedTarget || !document.contains(event.relatedTarget)) {
+      els.dropzone.classList.remove('drag');
+    }
+  });
+
+  document.addEventListener('drop', event => {
+    event.preventDefault();
+    els.dropzone.classList.remove('drag');
+    const files = event.dataTransfer?.files;
+    if (files && files.length) void handleFiles(files);
+  });
+
+  document.addEventListener('keydown', event => {
+    const target = document.activeElement;
+    const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (event.code === 'Space' && !typing) {
+      event.preventDefault();
+      els.playBtn.click();
+    }
+  });
+
+  function releaseAll() {
+    ++prepareToken;
+    releaseElement(audio);
+    releaseElement(video);
+    if (activeUrl) {
+      try { URL.revokeObjectURL(activeUrl); } catch (_) {}
+    }
+    activeUrl = null;
+    activeTrackId = null;
+    activeMedia = null;
+  }
+
+  window.addEventListener('pagehide', releaseAll);
+
+  // ---------------------------------------------------------------------------
+  // Startup repair / migration cleanup
+  // ---------------------------------------------------------------------------
+  async function init() {
+    try {
+      tracks = await withTimeout(getAllMeta(), 20000, 'Loading your library timed out.');
+      tracks = tracks.map(track => ({
+        ...track,
+        title: String(track.title || 'Untitled'),
+        artist: String(track.artist || 'Unknown artist'),
+        duration: Number.isFinite(Number(track.duration)) ? Number(track.duration) : 0,
+        addedAt: Number(track.addedAt) || Date.now(),
+        mime: String(track.mime || ''),
+        kind: track.kind === 'video' ? 'video' : 'audio',
+        storage: track.storage === 'opfs' ? 'opfs' : 'idb',
+        fileName: String(track.fileName || ''),
+        fileSize: Number(track.fileSize) || 0
+      }));
+      tracks.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+      render();
+    } catch (error) {
+      tracks = [];
+      render();
+      toast(`Could not load the library: ${error.message || 'storage unavailable'}`, true);
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
